@@ -14,6 +14,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.commons.lang3.RandomUtils;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
@@ -37,26 +39,49 @@ public class TestRunnerService {
 		return new String(Files.readAllBytes(Paths.get(COOKIE_FILE_PATH)));
 	}
 
+	public static String loginSpoda() {
+		Response signIn = RestAssured.given().headers("content-type", "application/json")
+				.body("{\"email\":\"qaspoda1@mailnesia.com\",\"password\":\"Test@123\"}")
+				.post("https://api.spoda.ai/auth/sign-in");
+		String accessToken = signIn.getBody().jsonPath().getString("access_token");
+		System.setProperty("token", accessToken);
+		return accessToken;
+	}
+
 	public static Map<String, String> getRequestResponse(List<String> questions) throws IOException {
 		Map<String, String> responses = new HashMap<>();
 		int count = 1;
 		for (String q : questions) {
+
 			SpodaBody sp = new SpodaBody(q);
 			Response response = null;
 			SpodaResponse res = null;
 			String answer = "";
 			try {
-				response = RestAssured.given().headers("content-type", "application/json").header("Cookie", getCookie())
-						.body(sp).post("https://api.spoda.ai/messages");
+				response = RestAssured.given().headers("content-type", "application/json")
+						.header("Authorization", "Bearer " + System.getProperty("token")).body(sp)
+						.post("https://api.spoda.ai/messages");
 				res = response.as(SpodaResponse.class);
 				answer = res.getWidgets().getCredit_used() + " = " + response.getTimeIn(TimeUnit.SECONDS) + " = "
 						+ res.getWidgets().getWidget_data().get(0).getData();
 
 			} catch (Exception e) {
-				answer = 0 + " = " + 0 + " = " + "Server Error in Response";
+				String message = response.getBody().jsonPath().getString("message");
+				if (message.contains("out")) {
+
+					Response patch = RestAssured.given()
+							.header("Authorization", "Bearer " + System.getProperty("token"))
+							.patch("https://api.spoda.ai/users/b05a69ca-31fa-43cd-97f0-286fbfac1888/user-credit-points");
+					System.out.println(patch.getBody().asString());
+				}
+
+				answer = 0 + " = " + 0 + " = " + "Server Error";
 
 			}
 
+			if (responses.containsKey(q)) {
+				q = q + " ---> this question repeated, so ignore after words after hypen " + RandomStringUtils.randomAlphanumeric(3);
+			}
 			System.out.println("Question " + count + " -> " + q + " : answer -> " + answer);
 			responses.put(q, answer);
 			count++;
@@ -116,6 +141,8 @@ public class TestRunnerService {
 
 	@Test
 	public void getAns() throws IOException {
+		loginSpoda();
+
 		writeToExcelUpdate();
 	}
 }
